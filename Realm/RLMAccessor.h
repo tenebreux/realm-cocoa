@@ -18,9 +18,15 @@
 
 #import <Foundation/Foundation.h>
 
-@class RLMObjectSchema, RLMProperty, RLMObjectBase;
+@class RLMObjectSchema, RLMProperty, RLMObjectBase, RLMRealm;
 
 typedef NSUInteger RLMCreationOptions;
+
+namespace realm {
+    class Table;
+    template<typename T> class BasicRow;
+    typedef BasicRow<Table> Row;
+}
 
 //
 // Accessors Class Creation/Caching
@@ -35,6 +41,7 @@ Class RLMStandaloneAccessorClassForObjectClass(Class objectClass, RLMObjectSchem
 //
 void RLMDynamicValidatedSet(RLMObjectBase *obj, NSString *propName, id val);
 id RLMDynamicGet(RLMObjectBase *obj, NSString *propName);
+id RLMDynamicGet(RLMRealm *realm, realm::Row &row, RLMProperty *prop);
 
 // by property/column
 void RLMDynamicSet(RLMObjectBase *obj, RLMProperty *prop, id val, RLMCreationOptions options);

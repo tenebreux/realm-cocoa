@@ -150,15 +150,15 @@ extern "C" {
 
     // delete objects
     RLMResults *objects = [StringObject allObjectsInRealm:realm];
-    XCTAssertEqual(objects.count, 3U, @"Expecting 3 objects");
+    XCTAssertEqual(objects.count, 3U);
     [realm beginWriteTransaction];
     [realm deleteObjects:[StringObject objectsInRealm:realm where:@"stringCol != 'a'"]];
-    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 1U, @"Expecting 0 objects");
+    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 1U);
     [realm deleteObjects:objects];
-    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 0U, @"Expecting 0 objects");
+    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 0U);
     [realm commitWriteTransaction];
 
-    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 0U, @"Expecting 0 objects");
+    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 0U);
     XCTAssertThrows(strObj.stringCol, @"Object should be invalidated");
 
     // add objects to linkView
@@ -167,22 +167,23 @@ extern "C" {
     [StringObject createInRealm:realm withValue:@[@"d"]];
     [realm commitWriteTransaction];
 
-    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 4U, @"Expecting 4 objects");
+    XCTAssertEqual(obj.array.count, 3U);
+    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 4U);
 
     // remove from linkView
     [realm beginWriteTransaction];
     [realm deleteObjects:obj.array];
     [realm commitWriteTransaction];
 
-    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 1U, @"Expecting 1 object");
-    XCTAssertEqual(obj.array.count, 0U, @"Expecting 0 objects");
+    XCTAssertEqual([[StringObject allObjectsInRealm:realm] count], 1U);
+    XCTAssertEqual(obj.array.count, 0U);
 
     // remove NSArray
     NSArray *arrayOfLastObject = @[[[StringObject allObjectsInRealm:realm] lastObject]];
     [realm beginWriteTransaction];
     [realm deleteObjects:arrayOfLastObject];
     [realm commitWriteTransaction];
-    XCTAssertEqual(objects.count, 0U, @"Expecting 0 objects");
+    XCTAssertEqual(objects.count, 0U);
 
     // add objects to linkView
     [realm beginWriteTransaction];
@@ -191,11 +192,11 @@ extern "C" {
     [realm commitWriteTransaction];
 
     // remove objects from realm
-    XCTAssertEqual(obj.array.count, 2U, @"Expecting 2 objects");
+    XCTAssertEqual(obj.array.count, 2U);
     [realm beginWriteTransaction];
     [realm deleteObjects:[StringObject allObjectsInRealm:realm]];
     [realm commitWriteTransaction];
-    XCTAssertEqual(obj.array.count, 0U, @"Expecting 0 objects");
+    XCTAssertEqual(obj.array.count, 0U);
 }
 
 - (void)testAddPersistedObjectToOtherRealm {

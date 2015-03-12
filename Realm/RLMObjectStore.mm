@@ -370,7 +370,8 @@ void RLMInitializeSwiftListAccessor(__unsafe_unretained RLMObjectBase *const obj
         if (prop.type == RLMPropertyTypeArray) {
             RLMArray *array = [RLMArrayLinkView arrayWithObjectClassName:prop.objectClassName
                                                                     view:object->_row.get_linklist(prop.column)
-                                                                   realm:object->_realm];
+                                                                   realm:object->_realm
+                                                                     key:prop.name];
             [RLMObjectUtilClass(YES) initializeListProperty:object property:prop array:array];
         }
     }
@@ -440,6 +441,15 @@ void RLMAddObjectToRealm(__unsafe_unretained RLMObjectBase *const object,
     };
     object->_row = (*schema.table)[RLMCreateOrGetRowForObject(schema, primaryGetter, options, created)];
 
+    // unregister all observers of the standalone object
+    // has to be done before any linked standalone objects are added
+    NSMutableArray *observers = object->_standaloneObservers;
+    object->_standaloneObservers = nil;
+
+    for (RLMObservationInfo *info in observers) {
+        [object removeObserver:info.observer forKeyPath:info.key context:info.context];
+    }
+
     // populate all properties
     for (RLMProperty *prop in schema.properties) {
         // get object from ivar using key value coding
@@ -477,6 +487,14 @@ void RLMAddObjectToRealm(__unsafe_unretained RLMObjectBase *const object,
 
     // set to proper accessor class
     object_setClass(object, schema.accessorClass);
+
+    // re-add the observers
+    for (RLMObservationInfo *info in observers) {
+        [object addObserver:info.observer
+                 forKeyPath:info.key
+                    options:info.options & ~NSKeyValueObservingOptionInitial
+                    context:info.context];
+    }
 
     RLMInitializeSwiftListAccessor(object);
 }
@@ -552,11 +570,27 @@ void RLMDeleteObjectFromRealm(__unsafe_unretained RLMObjectBase *const object,
 
     // move last row to row we are deleting
     if (object->_row.is_attached()) {
-        object->_row.get_table()->move_last_over(object->_row.get_index());
+        RLMTrackDeletions(realm, ^{
+            object->_row.get_table()->move_last_over(object->_row.get_index());
+        });
     }
 
     // set realm to nil
     object->_realm = nil;
+}
+
+void RLMClearTable(RLMObjectSchema *objectSchema) {
+    for (auto observer : objectSchema->_observers)
+        [observer willChangeValueForKey:@"invalidated"];
+
+    RLMTrackDeletions(objectSchema.realm, ^{
+        objectSchema.table->clear();
+    });
+
+    for (auto observer : objectSchema->_observers)
+        [observer didChangeValueForKey:@"invalidated"];
+
+    objectSchema->_observers.clear();
 }
 
 void RLMDeleteAllObjectsFromRealm(RLMRealm *realm) {
@@ -564,7 +598,7 @@ void RLMDeleteAllObjectsFromRealm(RLMRealm *realm) {
 
     // clear table for each object schema
     for (RLMObjectSchema *objectSchema in realm.schema.objectSchema) {
-        objectSchema.table->clear();
+        RLMClearTable(objectSchema);
     }
 }
 
