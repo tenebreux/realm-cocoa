@@ -119,12 +119,6 @@ RLM_ARRAY_TYPE(KVOLinkObject1)
 - (id)observableForObject:(id)obj;
 @end
 
-struct KVONotification {
-    NSString *keyPath;
-    id object;
-    NSDictionary *change;
-};
-
 // subscribes to kvo notifications on the passed object on creation, records
 // all change notifications sent and makes them available in `notifications`,
 // and automatically unsubscribes on destruction
@@ -136,7 +130,7 @@ class KVORecorder {
     RLMRealm *_observationRealm;
 
 public:
-    std::vector<KVONotification> notifications;
+    std::vector<NSDictionary *> notifications;
 
     // construct a new recorder for the given `keyPath` on `obj`, using `observer`
     // as the NSObject helper to actually add as an observer
@@ -163,7 +157,10 @@ public:
 
     // record a single notification
     void operator()(NSString *key, id obj, NSDictionary *changeDictionary) {
-        notifications.push_back({key, obj, changeDictionary.copy});
+        id self = _observer;
+        XCTAssertEqual(obj, _obj);
+        XCTAssertEqualObjects(key, _keyPath);
+        notifications.push_back(changeDictionary.copy);
     }
 
     // ensure that the observed object is updated for any changes made to the
@@ -181,16 +178,16 @@ public:
 #define AssertNotification(recorder, index) ([&]{ \
     (recorder).refresh(); \
     XCTAssertGreaterThan((recorder).notifications.size(), index); \
-    return (recorder).notifications.size() > index ? &(recorder).notifications[index] : nullptr; \
+    return (recorder).notifications.size() > index ? (recorder).notifications[index] : nullptr; \
 })()
 
 // Validate that `recorder` has enough notifications for `index` to be valid,
 // and if it does validate that the notification is correct
 #define AssertChanged(recorder, index, from, to) do { \
-    if (KVONotification *note = AssertNotification((recorder), (index))) { \
-        XCTAssertEqualObjects(@(NSKeyValueChangeSetting), note->change[NSKeyValueChangeKindKey]); \
-        XCTAssertEqualObjects((from), note->change[NSKeyValueChangeOldKey]); \
-        XCTAssertEqualObjects((to), note->change[NSKeyValueChangeNewKey]); \
+    if (NSDictionary *note = AssertNotification((recorder), (index))) { \
+        XCTAssertEqualObjects(@(NSKeyValueChangeSetting), note[NSKeyValueChangeKindKey]); \
+        XCTAssertEqualObjects((from), note[NSKeyValueChangeOldKey]); \
+        XCTAssertEqualObjects((to), note[NSKeyValueChangeNewKey]); \
     } \
 } while (false)
 
@@ -404,15 +401,15 @@ public:
     {
         KVORecorder r(self, obj, @"int32Col", 0);
         obj.int32Col = 0;
-        if (KVONotification *note = AssertNotification(r, 0U)) {
-            XCTAssertNil(note->change[NSKeyValueChangeOldKey]);
+        if (NSDictionary *note = AssertNotification(r, 0U)) {
+            XCTAssertNil(note[NSKeyValueChangeOldKey]);
         }
     }
     {
         KVORecorder r(self, obj, @"int32Col", NSKeyValueObservingOptionOld);
         obj.int32Col = 0;
-        if (KVONotification *note = AssertNotification(r, 0U)) {
-            XCTAssertNotNil(note->change[NSKeyValueChangeOldKey]);
+        if (NSDictionary *note = AssertNotification(r, 0U)) {
+            XCTAssertNotNil(note[NSKeyValueChangeOldKey]);
         }
     }
 }
@@ -423,15 +420,15 @@ public:
     {
         KVORecorder r(self, obj, @"int32Col", 0);
         obj.int32Col = 0;
-        if (KVONotification *note = AssertNotification(r, 0U)) {
-            XCTAssertNil(note->change[NSKeyValueChangeNewKey]);
+        if (NSDictionary *note = AssertNotification(r, 0U)) {
+            XCTAssertNil(note[NSKeyValueChangeNewKey]);
         }
     }
     {
         KVORecorder r(self, obj, @"int32Col", NSKeyValueObservingOptionNew);
         obj.int32Col = 0;
-        if (KVONotification *note = AssertNotification(r, 0U)) {
-            XCTAssertNotNil(note->change[NSKeyValueChangeNewKey]);
+        if (NSDictionary *note = AssertNotification(r, 0U)) {
+            XCTAssertNotNil(note[NSKeyValueChangeNewKey]);
         }
     }
 }
@@ -444,13 +441,13 @@ public:
     r.refresh();
 
     XCTAssertEqual(2U, r.notifications.size());
-    if (KVONotification *note = AssertNotification(r, 0U)) {
-        XCTAssertNil(note->change[NSKeyValueChangeNewKey]);
-        XCTAssertEqualObjects(@YES, note->change[NSKeyValueChangeNotificationIsPriorKey]);
+    if (NSDictionary *note = AssertNotification(r, 0U)) {
+        XCTAssertNil(note[NSKeyValueChangeNewKey]);
+        XCTAssertEqualObjects(@YES, note[NSKeyValueChangeNotificationIsPriorKey]);
     }
-    if (KVONotification *note = AssertNotification(r, 1U)) {
-        XCTAssertNotNil(note->change[NSKeyValueChangeNewKey]);
-        XCTAssertNil(note->change[NSKeyValueChangeNotificationIsPriorKey]);
+    if (NSDictionary *note = AssertNotification(r, 1U)) {
+        XCTAssertNotNil(note[NSKeyValueChangeNewKey]);
+        XCTAssertNil(note[NSKeyValueChangeNotificationIsPriorKey]);
     }
 }
 
@@ -541,9 +538,9 @@ public:
     id mutator = [obj mutableArrayValueForKey:@"arrayCol"];
 
 #define AssertIndexChange(kind, indexes) \
-    if (KVONotification *note = AssertNotification(r, 0U)) { \
-        XCTAssertEqual([note->change[NSKeyValueChangeKindKey] intValue], kind); \
-        XCTAssertEqualObjects(note->change[NSKeyValueChangeIndexesKey], indexes); \
+    if (NSDictionary *note = AssertNotification(r, 0U)) { \
+        XCTAssertEqual([note[NSKeyValueChangeKindKey] intValue], kind); \
+        XCTAssertEqualObjects(note[NSKeyValueChangeIndexesKey], indexes); \
         r.notifications.pop_back(); \
         XCTAssertTrue(r.notifications.empty()); \
     }
@@ -644,9 +641,7 @@ public:
 
 // still to test:
 //   - Batch array modification
-//   - correct object sent in notifications
 //   - correct object number of `invalidate` notifications sent
-//   - rollback of RLMArray changes
 @end
 
 // Run tests on a standalone RLMObject instance
@@ -897,9 +892,9 @@ public:
     KVORecorder r(self, obj, @"obj");
     [self.realm deleteObject:linked];
 
-    if (KVONotification *note = AssertNotification(r, 0U)) {
-        XCTAssertTrue([note->change[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
-        XCTAssertEqualObjects(note->change[NSKeyValueChangeNewKey], NSNull.null);
+    if (NSDictionary *note = AssertNotification(r, 0U)) {
+        XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
+        XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
 }
 
@@ -908,9 +903,9 @@ public:
     KVORecorder r(self, obj, @"obj");
     [self.realm deleteObjects:[KVOLinkObject1 allObjectsInRealm:self.realm]];
 
-    if (KVONotification *note = AssertNotification(r, 0U)) {
-        XCTAssertTrue([note->change[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
-        XCTAssertEqualObjects(note->change[NSKeyValueChangeNewKey], NSNull.null);
+    if (NSDictionary *note = AssertNotification(r, 0U)) {
+        XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
+        XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
 }
 
@@ -919,9 +914,9 @@ public:
     KVORecorder r(self, obj, @"obj");
     [self.realm deleteObjects:[KVOLinkObject1 objectsInRealm:self.realm where:@"TRUEPREDICATE"]];
 
-    if (KVONotification *note = AssertNotification(r, 0U)) {
-        XCTAssertTrue([note->change[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
-        XCTAssertEqualObjects(note->change[NSKeyValueChangeNewKey], NSNull.null);
+    if (NSDictionary *note = AssertNotification(r, 0U)) {
+        XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
+        XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
 }
 
@@ -1021,9 +1016,9 @@ public:
 
     KVORecorder r(self, obj, @"objectCol");
     [self.realm cancelWriteTransaction];
-    if (KVONotification *note = AssertNotification(r, 0U)) {
-        XCTAssertTrue([note->change[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
-        XCTAssertEqualObjects(note->change[NSKeyValueChangeNewKey], NSNull.null);
+    if (NSDictionary *note = AssertNotification(r, 0U)) {
+        XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
+        XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
 
     [self.realm beginWriteTransaction];
@@ -1037,9 +1032,9 @@ public:
     KVORecorder r3(self, obj, @"objectCol.boolCol");
     [self.realm cancelWriteTransaction];
     AssertChanged(r, 0U, @NO, @YES);
-    if (KVONotification *note = AssertNotification(r2, 0U)) {
-        XCTAssertTrue([note->change[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
-        XCTAssertEqualObjects(note->change[NSKeyValueChangeNewKey], NSNull.null);
+    if (NSDictionary *note = AssertNotification(r2, 0U)) {
+        XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
+        XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
     AssertChanged(r3, 0U, @NO, NSNull.null);
     // FIXME: too many invalidateds being sent
