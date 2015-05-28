@@ -77,7 +77,7 @@ static inline void RLMValidateObjectClass(__unsafe_unretained RLMObjectBase *con
     }
 }
 
-static RLMObservable *getObservable(__unsafe_unretained RLMArrayLinkView *const ar) {
+static RLMObservable *getObservable(__unsafe_unretained RLMArrayLinkView *const ar, bool create = false) {
     if (ar->_observable) {
         return ar->_observable;
     }
@@ -87,6 +87,15 @@ static RLMObservable *getObservable(__unsafe_unretained RLMArrayLinkView *const 
             ar->_observable = o;
             return o;
         }
+    }
+
+    if (create) {
+        RLMObservable *observable = [[RLMObservable alloc] initWithRow:(*ar->_objectSchema.table)[ar->_backingLinkView->get_origin_row_index()]
+                                                                 realm:ar->_realm
+                                                                schema:ar->_objectSchema];
+        ar->_objectSchema->_observers.push_back(observable);
+        ar->_observable = observable;
+        return observable;
     }
 
     return nil;
@@ -376,6 +385,43 @@ static void changeArray(__unsafe_unretained RLMArrayLinkView *const ar, NSKeyVal
 
 - (NSArray *)objectsAtIndexes:(__unused NSIndexSet *)indexes {
     return nil;
+}
+
+- (void)addObserver:(id)observer
+         forKeyPath:(NSString *)keyPath
+            options:(NSKeyValueObservingOptions)options
+            context:(void *)context {
+    if (![keyPath isEqualToString:@"invalidated"]) {
+        [super addObserver:observer forKeyPath:keyPath options:options context:context];
+    }
+    else {
+        RLMObservable *observable = getObservable(self, true);
+        [observable addObserver:observer forKeyPath:keyPath options:options context:context];
+        // "Using a __bridge_retained or __bridge_transfer cast purely to convince ARC to emit an unbalanced retain or release, respectively, is poor form."
+        (void)(__bridge_retained CFDataRef)observable;
+    }
+}
+
+- (void)removeObserver:(NSObject *)observer forKeyPath:(NSString *)keyPath {
+    if ([keyPath isEqualToString:@"invalidated"]) {
+        RLMObservable *observable = getObservable(self);
+        [observable removeObserver:observer forKeyPath:keyPath];
+        (void)(__bridge_transfer id)(__bridge void *)observable;
+    }
+    else {
+        [super removeObserver:observer forKeyPath:keyPath];
+    }
+}
+
+- (void)removeObserver:(NSObject *)observer forKeyPath:(NSString *)keyPath context:(void *)context {
+    if ([keyPath isEqualToString:@"invalidated"]) {
+        RLMObservable *observable = getObservable(self);
+        [observable removeObserver:observer forKeyPath:keyPath context:context];
+        (void)(__bridge_transfer id)(__bridge void *)observable;
+    }
+    else {
+        [super removeObserver:observer forKeyPath:keyPath context:context];
+    }
 }
 
 @end

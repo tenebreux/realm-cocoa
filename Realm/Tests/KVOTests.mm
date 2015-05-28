@@ -847,8 +847,10 @@ public:
     KVOObject *obj = [self createObject];
     KVORecorder r1(self, obj, @"arrayCol");
     KVORecorder r2(self, obj, @"arrayCol.invalidated");
+    KVORecorder r3(self, obj.arrayCol, @"invalidated");
     [self.realm deleteObject:obj];
     AssertChanged(r2, @NO, @YES);
+    AssertChanged(r3, @NO, @YES);
 }
 
 - (void)testDeleteAllObjects {
@@ -977,10 +979,19 @@ public:
 @interface KVOMultipleAccessorsTests : KVOPersistedObjectTests
 @end
 @implementation KVOMultipleAccessorsTests
-- (id)observableForObject:(RLMObject *)obj {
-    RLMObject *copy = [[obj.objectSchema.accessorClass alloc] initWithRealm:obj.realm schema:obj.objectSchema];
-    copy->_row = obj->_row;
-    return copy;
+- (id)observableForObject:(id)value {
+    if (RLMObject *obj = RLMDynamicCast<RLMObject>(value)) {
+        RLMObject *copy = [[obj.objectSchema.accessorClass alloc] initWithRealm:obj.realm schema:obj.objectSchema];
+        copy->_row = obj->_row;
+        return copy;
+    }
+    else if (RLMArray *array = RLMDynamicCast<RLMArray>(value)) {
+        return array;
+    }
+    else {
+        XCTFail(@"unsupported type");
+        return nil;
+    }
 }
 
 - (void)testIgnoredProperty {
@@ -1182,15 +1193,25 @@ public:
     [super tearDown];
 }
 
-- (id)observableForObject:(RLMObject *)obj {
+- (id)observableForObject:(id)value {
     [self.realm commitWriteTransaction];
     [self.realm beginWriteTransaction];
     [self.secondaryRealm refresh];
 
-    RLMObject *copy = [[obj.objectSchema.accessorClass alloc] initWithRealm:self.secondaryRealm
-                                                                     schema:self.secondaryRealm.schema[obj.objectSchema.className]];
-    copy->_row = (*copy.objectSchema.table)[obj->_row.get_index()];
-    return copy;
+    if (RLMObject *obj = RLMDynamicCast<RLMObject>(value)) {
+        RLMObject *copy = [[obj.objectSchema.accessorClass alloc] initWithRealm:self.secondaryRealm
+                                                                         schema:self.secondaryRealm.schema[obj.objectSchema.className]];
+        copy->_row = (*copy.objectSchema.table)[obj->_row.get_index()];
+        return copy;
+    }
+    else if (RLMArray *array = RLMDynamicCast<RLMArray>(value)) {
+        return array;
+    }
+    else {
+        XCTFail(@"unsupported type");
+        return nil;
+    }
+
 }
 
 - (bool)collapsesNotifications {

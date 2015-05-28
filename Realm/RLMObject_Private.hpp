@@ -27,6 +27,7 @@
     bool _returnNil;
 }
 @property (nonatomic) void *observationInfo;
+- (instancetype)initWithRow:(realm::Row const&)row realm:(RLMRealm *)realm schema:(RLMObjectSchema *)objectSchema;
 @end
 
 // RLMObject accessor and read/write realm

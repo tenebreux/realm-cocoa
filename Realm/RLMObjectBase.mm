@@ -258,13 +258,7 @@ static NSString *propertyKeyPath(NSString *keyPath, RLMObjectSchema *objectSchem
     NSUInteger sep = [keyPath rangeOfString:@"."].location;
     NSString *key = sep == NSNotFound ? keyPath : [keyPath substringToIndex:sep];
     RLMProperty *prop = objectSchema[key];
-    if (!prop)
-        return nil;
-    if (prop.type != RLMPropertyTypeArray)
-        return keyPath;
-    if (sep != NSNotFound && [[keyPath substringFromIndex:sep + 1] isEqualToString:@"invalidated"])
-        return @"invalidated";
-    return keyPath;
+    return prop ? keyPath : nil;
 }
 
 static RLMObservable *getObservable(RLMObjectBase *obj) {
