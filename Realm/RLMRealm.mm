@@ -670,7 +670,6 @@ struct ObserverState {
     size_t column;
     NSString *key;
     __unsafe_unretained RLMObservable *observable;
-    bool isLink;
 
     bool changed = false;
     bool multipleLinkviewChanges = false;
@@ -689,12 +688,10 @@ public:
     void parse_complete() {
         for (auto& o : observers) {
             if (o.row == realm::not_found) {
-                if (o.isLink) {
-                    o.observable->_returnNil = false;
-                    [o.observable willChangeValueForKey:o.key];
-                    o.observable->_returnNil = true;
-                    [o.observable didChangeValueForKey:o.key];
-                }
+                o.observable->_returnNil = false;
+                [o.observable willChangeValueForKey:o.key];
+                o.observable->_returnNil = true;
+                [o.observable didChangeValueForKey:o.key];
                 [o.observable willChangeValueForKey:@"invalidated"];
             }
             if (!o.changed)
@@ -906,8 +903,7 @@ static void call_with_notifications(SharedGroup *sg, RLMSchema *schema, Func&& f
                     row.get_index(),
                     i,
                     [objectSchema.properties[i] name],
-                    observable,
-                    [(RLMProperty *)objectSchema.properties[i] type] == RLMPropertyTypeObject});
+                    observable});
             }
         }
     }
