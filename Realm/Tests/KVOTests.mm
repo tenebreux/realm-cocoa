@@ -175,19 +175,23 @@ public:
 };
 
 // Assert that `recorder` has a notification at `index` and return it if so
-#define AssertNotification(recorder, index) ([&]{ \
+#define AssertNotification(recorder) ([&]{ \
     (recorder).refresh(); \
-    XCTAssertGreaterThan((recorder).notifications.size(), index); \
-    return (recorder).notifications.size() > index ? (recorder).notifications[index] : nullptr; \
+    XCTAssertFalse(recorder.notifications.empty(), @"Did not get a notification when expected"); \
+    return (recorder).notifications.empty() ? nullptr : (recorder).notifications.front(); \
 })()
 
-// Validate that `recorder` has enough notifications for `index` to be valid,
-// and if it does validate that the notification is correct
-#define AssertChanged(recorder, index, from, to) do { \
-    if (NSDictionary *note = AssertNotification((recorder), (index))) { \
+// Validate that `recorder` has at least one notification, and that the first
+// notification is the expected one
+#define AssertChanged(recorder, from, to) do { \
+    if (NSDictionary *note = AssertNotification((recorder))) { \
         XCTAssertEqualObjects(@(NSKeyValueChangeSetting), note[NSKeyValueChangeKindKey]); \
         XCTAssertEqualObjects((from), note[NSKeyValueChangeOldKey]); \
         XCTAssertEqualObjects((to), note[NSKeyValueChangeNewKey]); \
+        (recorder).notifications.erase((recorder).notifications.begin()); \
+    } \
+    else { \
+        return; \
     } \
 } while (false)
 
@@ -288,12 +292,12 @@ public:
     {
         KVORecorder r(self, obj, @"int32Col");
         obj.int32Col = 10;
-        AssertChanged(r, 0U, @2, @10);
+        AssertChanged(r, @2, @10);
     }
     {
         KVORecorder r(self, obj, @"int32Col");
         obj.int32Col = 1;
-        AssertChanged(r, 0U, @10, @1);
+        AssertChanged(r, @10, @1);
     }
 }
 
@@ -302,7 +306,7 @@ public:
     {
         KVORecorder r(self, obj, @"int32Col");
         obj.int32Col = obj.int32Col;
-        AssertChanged(r, 0U, @2, @2);
+        AssertChanged(r, @2, @2);
     }
 }
 
@@ -313,9 +317,9 @@ public:
         KVORecorder r2(self, obj, @"int32Col");
         KVORecorder r3(self, obj, @"int32Col");
         obj.int32Col = 10;
-        AssertChanged(r1, 0U, @2, @10);
-        AssertChanged(r2, 0U, @2, @10);
-        AssertChanged(r3, 0U, @2, @10);
+        AssertChanged(r1, @2, @10);
+        AssertChanged(r2, @2, @10);
+        AssertChanged(r3, @2, @10);
     }
 }
 
@@ -327,22 +331,22 @@ public:
         KVORecorder r64(self, obj, @"int64Col");
 
         obj.int16Col = 2;
-        AssertChanged(r16, 0U, @1, @2);
-        XCTAssertEqual(1U, r16.notifications.size());
-        XCTAssertEqual(0U, r32.notifications.size());
-        XCTAssertEqual(0U, r64.notifications.size());
+        AssertChanged(r16, @1, @2);
+        XCTAssertTrue(r16.notifications.empty());
+        XCTAssertTrue(r32.notifications.empty());
+        XCTAssertTrue(r64.notifications.empty());
 
         obj.int32Col = 2;
-        AssertChanged(r32, 0U, @2, @2);
-        XCTAssertEqual(1U, r16.notifications.size());
-        XCTAssertEqual(1U, r32.notifications.size());
-        XCTAssertEqual(0U, r64.notifications.size());
+        AssertChanged(r32, @2, @2);
+        XCTAssertTrue(r16.notifications.empty());
+        XCTAssertTrue(r32.notifications.empty());
+        XCTAssertTrue(r64.notifications.empty());
 
         obj.int64Col = 2;
-        AssertChanged(r64, 0U, @3, @2);
-        XCTAssertEqual(1U, r16.notifications.size());
-        XCTAssertEqual(1U, r32.notifications.size());
-        XCTAssertEqual(1U, r64.notifications.size());
+        AssertChanged(r64, @3, @2);
+        XCTAssertTrue(r16.notifications.empty());
+        XCTAssertTrue(r32.notifications.empty());
+        XCTAssertTrue(r64.notifications.empty());
     }
 }
 
@@ -356,13 +360,13 @@ public:
     obj.int32Col = 3;
 
     if (self.collapsesNotifications) {
-        AssertChanged(r, 0U, @2, @3);
+        AssertChanged(r, @2, @3);
     }
     else {
-        AssertChanged(r, 0U, @2, @1);
-        AssertChanged(r, 1U, @1, @2);
-        AssertChanged(r, 2U, @2, @3);
-        AssertChanged(r, 3U, @3, @3);
+        AssertChanged(r, @2, @1);
+        AssertChanged(r, @1, @2);
+        AssertChanged(r, @2, @3);
+        AssertChanged(r, @3, @3);
     }
 }
 
@@ -374,12 +378,11 @@ public:
     KVORecorder r2(self, obj2, @"int32Col");
 
     obj1.int32Col = 10;
-    AssertChanged(r1, 0U, @2, @10);
+    AssertChanged(r1, @2, @10);
     XCTAssertEqual(0U, r2.notifications.size());
 
     obj2.int32Col = 5;
-    XCTAssertEqual(1U, r1.notifications.size());
-    AssertChanged(r2, 0U, @2, @5);
+    AssertChanged(r2, @2, @5);
 }
 
 - (void)testOptionsInitial {
@@ -401,14 +404,14 @@ public:
     {
         KVORecorder r(self, obj, @"int32Col", 0);
         obj.int32Col = 0;
-        if (NSDictionary *note = AssertNotification(r, 0U)) {
+        if (NSDictionary *note = AssertNotification(r)) {
             XCTAssertNil(note[NSKeyValueChangeOldKey]);
         }
     }
     {
         KVORecorder r(self, obj, @"int32Col", NSKeyValueObservingOptionOld);
         obj.int32Col = 0;
-        if (NSDictionary *note = AssertNotification(r, 0U)) {
+        if (NSDictionary *note = AssertNotification(r)) {
             XCTAssertNotNil(note[NSKeyValueChangeOldKey]);
         }
     }
@@ -420,14 +423,14 @@ public:
     {
         KVORecorder r(self, obj, @"int32Col", 0);
         obj.int32Col = 0;
-        if (NSDictionary *note = AssertNotification(r, 0U)) {
+        if (NSDictionary *note = AssertNotification(r)) {
             XCTAssertNil(note[NSKeyValueChangeNewKey]);
         }
     }
     {
         KVORecorder r(self, obj, @"int32Col", NSKeyValueObservingOptionNew);
         obj.int32Col = 0;
-        if (NSDictionary *note = AssertNotification(r, 0U)) {
+        if (NSDictionary *note = AssertNotification(r)) {
             XCTAssertNotNil(note[NSKeyValueChangeNewKey]);
         }
     }
@@ -441,11 +444,12 @@ public:
     r.refresh();
 
     XCTAssertEqual(2U, r.notifications.size());
-    if (NSDictionary *note = AssertNotification(r, 0U)) {
+    if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertNil(note[NSKeyValueChangeNewKey]);
         XCTAssertEqualObjects(@YES, note[NSKeyValueChangeNotificationIsPriorKey]);
     }
-    if (NSDictionary *note = AssertNotification(r, 1U)) {
+    r.notifications.erase(r.notifications.begin());
+    if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertNotNil(note[NSKeyValueChangeNewKey]);
         XCTAssertNil(note[NSKeyValueChangeNotificationIsPriorKey]);
     }
@@ -457,69 +461,69 @@ public:
     {
         KVORecorder r(self, obj, @"boolCol");
         obj.boolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
     }
 
     {
         KVORecorder r(self, obj, @"int16Col");
         obj.int16Col = 0;
-        AssertChanged(r, 0U, @1, @0);
+        AssertChanged(r, @1, @0);
     }
 
     {
         KVORecorder r(self, obj, @"int32Col");
         obj.int32Col = 0;
-        AssertChanged(r, 0U, @2, @0);
+        AssertChanged(r, @2, @0);
     }
 
     {
         KVORecorder r(self, obj, @"int64Col");
         obj.int64Col = 0;
-        AssertChanged(r, 0U, @3, @0);
+        AssertChanged(r, @3, @0);
     }
 
     {
         KVORecorder r(self, obj, @"floatCol");
         obj.floatCol = 1.0f;
-        AssertChanged(r, 0U, @0, @1);
+        AssertChanged(r, @0, @1);
     }
 
     {
         KVORecorder r(self, obj, @"doubleCol");
         obj.doubleCol = 1.0;
-        AssertChanged(r, 0U, @0, @1);
+        AssertChanged(r, @0, @1);
     }
 
     {
         KVORecorder r(self, obj, @"cBoolCol");
         obj.cBoolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
     }
 
     {
         KVORecorder r(self, obj, @"stringCol");
         obj.stringCol = @"abc";
-        AssertChanged(r, 0U, @"", @"abc");
+        AssertChanged(r, @"", @"abc");
     }
 
     {
         KVORecorder r(self, obj, @"binaryCol");
         NSData *data = [@"abc" dataUsingEncoding:NSUTF8StringEncoding];
         obj.binaryCol = data;
-        AssertChanged(r, 0U, NSData.data, data);
+        AssertChanged(r, NSData.data, data);
     }
 
     {
         KVORecorder r(self, obj, @"dateCol");
         NSDate *date = [NSDate dateWithTimeIntervalSinceReferenceDate:1];
         obj.dateCol = date;
-        AssertChanged(r, 0U, [NSDate dateWithTimeIntervalSinceReferenceDate:0], date);
+        AssertChanged(r, [NSDate dateWithTimeIntervalSinceReferenceDate:0], date);
     }
 
     {
         KVORecorder r(self, obj, @"objectCol");
         obj.objectCol = obj;
-        AssertChanged(r, 0U, NSNull.null, [self observableForObject:obj]);
+        AssertChanged(r, NSNull.null, [self observableForObject:obj]);
     }
 
     { // should be testing assignment, not mutation
@@ -538,7 +542,7 @@ public:
     id mutator = [obj mutableArrayValueForKey:@"arrayCol"];
 
 #define AssertIndexChange(kind, indexes) \
-    if (NSDictionary *note = AssertNotification(r, 0U)) { \
+    if (NSDictionary *note = AssertNotification(r)) { \
         XCTAssertEqual([note[NSKeyValueChangeKindKey] intValue], kind); \
         XCTAssertEqualObjects(note[NSKeyValueChangeIndexesKey], indexes); \
         r.notifications.pop_back(); \
@@ -585,7 +589,7 @@ public:
     KVOObject *obj = [self createObject];
     KVORecorder r(self, obj, @"ignored");
     obj.ignored = 10;
-    AssertChanged(r, 0U, @0, @10);
+    AssertChanged(r, @0, @10);
 }
 
 - (void)testChangeEndOfKeyPath {
@@ -595,7 +599,7 @@ public:
         r = std::make_unique<KVORecorder>(self, obj, @"obj.obj.boolCol");
     }
     obj.obj.obj.boolCol = YES;
-    AssertChanged(*r, 0U, @NO, @YES);
+    AssertChanged(*r, @NO, @YES);
 }
 
 - (void)testChangeMiddleOfKeyPath {
@@ -606,18 +610,17 @@ public:
 
     KVORecorder r(self, obj, @"obj.obj.boolCol");
     obj.obj.obj = newObj;
-    AssertChanged(r, 0U, @NO, @YES);
+    AssertChanged(r, @NO, @YES);
     newObj.boolCol = NO;
-    AssertChanged(r, 1U, @YES, @NO);
+    AssertChanged(r, @YES, @NO);
     oldObj.boolCol = YES;
-    XCTAssertEqual(2U, r.notifications.size());
 }
 
 - (void)testNullifyMiddleOfKeyPath {
     KVOLinkObject2 *obj = [self createLinkObject];
     KVORecorder r(self, obj, @"obj.obj.boolCol");
     obj.obj = nil;
-    AssertChanged(r, 0U, @NO, NSNull.null);
+    AssertChanged(r, @NO, NSNull.null);
 }
 
 - (void)testChangeMiddleOfKeyPathToNonNil {
@@ -628,7 +631,7 @@ public:
 
     KVORecorder r(self, obj, @"obj.obj.boolCol");
     obj.obj = obj2;
-    AssertChanged(r, 0U, NSNull.null, @YES);
+    AssertChanged(r, NSNull.null, @YES);
 }
 
 //- (void)testObserveArrayCount {
@@ -636,7 +639,7 @@ public:
 //    KVORecorder r(self, obj, @"arrayCol.@count");
 //    id mutator = [obj mutableArrayValueForKey:@"arrayCol"];
 //    [mutator addObject:obj];
-//    AssertChanged(r, 0U, @0, @1);
+//    AssertChanged(r, @0, @1);
 //}
 
 // still to test:
@@ -682,8 +685,8 @@ public:
     [realm addObject:obj];
     obj.int32Col = 10;
     obj.ignored = 15;
-    AssertChanged(r1, 0U, @2, @10);
-    AssertChanged(r2, 0U, @0, @15);
+    AssertChanged(r1, @2, @10);
+    AssertChanged(r2, @0, @15);
     [realm commitWriteTransaction];
 }
 
@@ -713,7 +716,7 @@ public:
         [realm beginWriteTransaction];
         [realm addObject:obj.obj];
         obj.obj.obj.boolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
         [realm cancelWriteTransaction];
     }
     @autoreleasepool {
@@ -724,7 +727,7 @@ public:
         [realm beginWriteTransaction];
         [realm addObject:obj.obj];
         obj.obj.obj.boolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
         [realm cancelWriteTransaction];
     }
 
@@ -738,7 +741,7 @@ public:
         [realm beginWriteTransaction];
         [realm addObject:obj];
         obj.obj.obj.boolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
         [realm cancelWriteTransaction];
     }
     @autoreleasepool {
@@ -753,7 +756,7 @@ public:
         [realm beginWriteTransaction];
         [realm addObject:obj.obj];
         obj.obj.obj.boolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
         [realm cancelWriteTransaction];
     }
 
@@ -765,7 +768,7 @@ public:
         [realm beginWriteTransaction];
         [realm addObject:obj.obj.obj];
         obj.obj.obj.boolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
         [realm cancelWriteTransaction];
     }
 
@@ -777,7 +780,7 @@ public:
         [realm beginWriteTransaction];
         [realm addObject:obj];
         obj.obj.obj.boolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
         [realm cancelWriteTransaction];
     }
 }
@@ -820,7 +823,7 @@ public:
     KVORecorder r1(self, obj, @"boolCol");
     KVORecorder r2(self, obj, @"invalidated");
     [self.realm deleteObject:obj];
-    AssertChanged(r2, 0U, @NO, @YES);
+    AssertChanged(r2, @NO, @YES);
     // should not crash
 }
 
@@ -828,7 +831,7 @@ public:
     KVOLinkObject2 *obj = [self createLinkObject];
     KVORecorder r(self, obj, @"obj.obj.boolCol");
     [self.realm deleteObject:obj.obj];
-    AssertChanged(r, 0U, @NO, NSNull.null);
+    AssertChanged(r, @NO, NSNull.null);
 }
 
 - (void)testDeleteParentOfObservedRLMArray {
@@ -836,7 +839,7 @@ public:
     KVORecorder r1(self, obj, @"arrayCol");
     KVORecorder r2(self, obj, @"arrayCol.invalidated");
     [self.realm deleteObject:obj];
-    AssertChanged(r2, 0U, @NO, @YES);
+    AssertChanged(r2, @NO, @YES);
 }
 
 - (void)testDeleteAllObjects {
@@ -844,7 +847,7 @@ public:
     KVORecorder r1(self, obj, @"boolCol");
     KVORecorder r2(self, obj, @"invalidated");
     [self.realm deleteAllObjects];
-    AssertChanged(r2, 0U, @NO, @YES);
+    AssertChanged(r2, @NO, @YES);
     // should not crash
 }
 
@@ -853,7 +856,7 @@ public:
     KVORecorder r1(self, obj, @"boolCol");
     KVORecorder r2(self, obj, @"invalidated");
     [self.realm deleteObjects:[KVOObject allObjectsInRealm:self.realm]];
-    AssertChanged(r2, 0U, @NO, @YES);
+    AssertChanged(r2, @NO, @YES);
     // should not crash
 }
 
@@ -862,7 +865,7 @@ public:
     KVORecorder r1(self, obj, @"boolCol");
     KVORecorder r2(self, obj, @"invalidated");
     [self.realm deleteObjects:[KVOObject objectsInRealm:self.realm where:@"TRUEPREDICATE"]];
-    AssertChanged(r2, 0U, @NO, @YES);
+    AssertChanged(r2, @NO, @YES);
     // should not crash
 }
 
@@ -876,13 +879,13 @@ public:
         KVOObject *obj = [self createObject];
         KVORecorder r(self, obj, @"boolCol");
         obj.boolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
     }
     @autoreleasepool {
         KVOObject *obj = [self createObject];
         KVORecorder r(self, obj, @"boolCol");
         obj.boolCol = YES;
-        AssertChanged(r, 0U, @NO, @YES);
+        AssertChanged(r, @NO, @YES);
     }
 }
 
@@ -892,7 +895,7 @@ public:
     KVORecorder r(self, obj, @"obj");
     [self.realm deleteObject:linked];
 
-    if (NSDictionary *note = AssertNotification(r, 0U)) {
+    if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
         XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
@@ -903,7 +906,7 @@ public:
     KVORecorder r(self, obj, @"obj");
     [self.realm deleteObjects:[KVOLinkObject1 allObjectsInRealm:self.realm]];
 
-    if (NSDictionary *note = AssertNotification(r, 0U)) {
+    if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
         XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
@@ -914,7 +917,7 @@ public:
     KVORecorder r(self, obj, @"obj");
     [self.realm deleteObjects:[KVOLinkObject1 objectsInRealm:self.realm where:@"TRUEPREDICATE"]];
 
-    if (NSDictionary *note = AssertNotification(r, 0U)) {
+    if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
         XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
@@ -974,7 +977,7 @@ public:
     KVORecorder r(self, obj, @"invalidated");
     KVORecorder r2(self, obj, @"boolCol");
     [self.realm cancelWriteTransaction];
-    AssertChanged(r, 0U, @NO, @YES);
+    AssertChanged(r, @NO, @YES);
     [self.realm beginWriteTransaction];
 }
 
@@ -987,7 +990,7 @@ public:
 
     KVORecorder r(self, obj, @"boolCol");
     [self.realm cancelWriteTransaction];
-    AssertChanged(r, 0U, @YES, @NO);
+    AssertChanged(r, @YES, @NO);
 
     [self.realm beginWriteTransaction];
 }
@@ -1002,7 +1005,7 @@ public:
 
     KVORecorder r(self, obj, @"objectCol");
     [self.realm cancelWriteTransaction];
-    AssertChanged(r, 0U, obj2, NSNull.null);
+    AssertChanged(r, obj2, NSNull.null);
 
     [self.realm beginWriteTransaction];
 }
@@ -1016,7 +1019,7 @@ public:
 
     KVORecorder r(self, obj, @"objectCol");
     [self.realm cancelWriteTransaction];
-    if (NSDictionary *note = AssertNotification(r, 0U)) {
+    if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
         XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
@@ -1031,12 +1034,12 @@ public:
     KVORecorder r2(self, obj, @"objectCol");
     KVORecorder r3(self, obj, @"objectCol.boolCol");
     [self.realm cancelWriteTransaction];
-    AssertChanged(r, 0U, @NO, @YES);
-    if (NSDictionary *note = AssertNotification(r2, 0U)) {
+    AssertChanged(r, @NO, @YES);
+    if (NSDictionary *note = AssertNotification(r2)) {
         XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
         XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
     }
-    AssertChanged(r3, 0U, @NO, NSNull.null);
+    AssertChanged(r3, @NO, NSNull.null);
     // FIXME: too many invalidateds being sent
     [self.realm beginWriteTransaction];
 }
@@ -1115,7 +1118,7 @@ public:
         [self.realm cancelWriteTransaction];
         [self.realm beginWriteTransaction];
         AssertIndexChange(NSKeyValueChangeInsertion, [NSIndexSet indexSetWithIndex:0]);
-        AssertChanged(r2, 0U, NSNull.null, [KVOLinkObject1 allObjectsInRealm:self.realm].firstObject);
+        AssertChanged(r2, NSNull.null, [KVOLinkObject1 allObjectsInRealm:self.realm].firstObject);
     }
     {
         [self.realm deleteObjects:[KVOLinkObject1 allObjectsInRealm:self.realm]];
@@ -1125,7 +1128,7 @@ public:
         [self.realm cancelWriteTransaction];
         [self.realm beginWriteTransaction];
         AssertIndexChange(NSKeyValueChangeInsertion, [NSIndexSet indexSetWithIndex:0]);
-        AssertChanged(r2, 0U, NSNull.null, [KVOLinkObject1 allObjectsInRealm:self.realm].firstObject);
+        AssertChanged(r2, NSNull.null, [KVOLinkObject1 allObjectsInRealm:self.realm].firstObject);
     }
     {
         [self.realm deleteObjects:obj.array];
@@ -1135,7 +1138,7 @@ public:
         [self.realm cancelWriteTransaction];
         [self.realm beginWriteTransaction];
         AssertIndexChange(NSKeyValueChangeInsertion, [NSIndexSet indexSetWithIndex:0]);
-        AssertChanged(r2, 0U, NSNull.null, [KVOLinkObject1 allObjectsInRealm:self.realm].firstObject);
+        AssertChanged(r2, NSNull.null, [KVOLinkObject1 allObjectsInRealm:self.realm].firstObject);
     }
 }
 
