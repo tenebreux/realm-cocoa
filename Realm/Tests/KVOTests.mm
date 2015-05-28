@@ -831,6 +831,7 @@ public:
     KVORecorder r1(self, obj, @"boolCol");
     KVORecorder r2(self, obj, @"invalidated");
     [self.realm deleteObject:obj];
+    AssertChanged(r1, @NO, NSNull.null);
     AssertChanged(r2, @NO, @YES);
     // should not crash
 }
@@ -855,6 +856,7 @@ public:
     KVORecorder r1(self, obj, @"boolCol");
     KVORecorder r2(self, obj, @"invalidated");
     [self.realm deleteAllObjects];
+    AssertChanged(r1, @NO, NSNull.null);
     AssertChanged(r2, @NO, @YES);
     // should not crash
 }
@@ -864,6 +866,7 @@ public:
     KVORecorder r1(self, obj, @"boolCol");
     KVORecorder r2(self, obj, @"invalidated");
     [self.realm deleteObjects:[KVOObject allObjectsInRealm:self.realm]];
+    AssertChanged(r1, @NO, NSNull.null);
     AssertChanged(r2, @NO, @YES);
     // should not crash
 }
@@ -873,6 +876,7 @@ public:
     KVORecorder r1(self, obj, @"boolCol");
     KVORecorder r2(self, obj, @"invalidated");
     [self.realm deleteObjects:[KVOObject objectsInRealm:self.realm where:@"TRUEPREDICATE"]];
+    AssertChanged(r1, @NO, NSNull.null);
     AssertChanged(r2, @NO, @YES);
     // should not crash
 }
