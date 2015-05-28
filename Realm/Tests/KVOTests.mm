@@ -808,7 +808,7 @@ public:
 }
 
 - (void)tearDown {
-    [self.realm cancelWriteTransaction];
+    [self.realm commitWriteTransaction];
     self.realm = nil;
     [super tearDown];
 }
