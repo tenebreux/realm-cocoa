@@ -146,13 +146,14 @@ public:
     }
 
     ~KVORecorder() {
+        id self = _observer;
         @try {
             [_obj removeObserver:_observer forKeyPath:_keyPath context:this];
         }
         @catch (NSException *e) {
-            id self = _observer;
             XCTFail(@"%@", e.description);
         }
+        XCTAssertTrue(notifications.empty());
     }
 
     // record a single notification
@@ -395,6 +396,7 @@ public:
     {
         KVORecorder r(self, obj, @"int32Col", NSKeyValueObservingOptionInitial);
         XCTAssertEqual(1U, r.notifications.size());
+        r.notifications.clear();
     }
 }
 
@@ -406,6 +408,7 @@ public:
         obj.int32Col = 0;
         if (NSDictionary *note = AssertNotification(r)) {
             XCTAssertNil(note[NSKeyValueChangeOldKey]);
+            r.notifications.pop_back();
         }
     }
     {
@@ -413,6 +416,7 @@ public:
         obj.int32Col = 0;
         if (NSDictionary *note = AssertNotification(r)) {
             XCTAssertNotNil(note[NSKeyValueChangeOldKey]);
+            r.notifications.pop_back();
         }
     }
 }
@@ -425,6 +429,7 @@ public:
         obj.int32Col = 0;
         if (NSDictionary *note = AssertNotification(r)) {
             XCTAssertNil(note[NSKeyValueChangeNewKey]);
+            r.notifications.pop_back();
         }
     }
     {
@@ -432,6 +437,7 @@ public:
         obj.int32Col = 0;
         if (NSDictionary *note = AssertNotification(r)) {
             XCTAssertNotNil(note[NSKeyValueChangeNewKey]);
+            r.notifications.pop_back();
         }
     }
 }
@@ -452,6 +458,7 @@ public:
     if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertNotNil(note[NSKeyValueChangeNewKey]);
         XCTAssertNil(note[NSKeyValueChangeNotificationIsPriorKey]);
+        r.notifications.pop_back();
     }
 }
 
@@ -532,6 +539,7 @@ public:
         [mutator addObject:obj];
         r.refresh();
         XCTAssertEqual(1U, r.notifications.size());
+        r.notifications.pop_back();
     }
 }
 
@@ -898,6 +906,7 @@ public:
     if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
         XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
+        r.notifications.pop_back();
     }
 }
 
@@ -909,6 +918,7 @@ public:
     if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
         XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
+        r.notifications.pop_back();
     }
 }
 
@@ -920,6 +930,7 @@ public:
     if (NSDictionary *note = AssertNotification(r)) {
         XCTAssertTrue([note[NSKeyValueChangeOldKey] isKindOfClass:[RLMObjectBase class]]);
         XCTAssertEqualObjects(note[NSKeyValueChangeNewKey], NSNull.null);
+        r.notifications.pop_back();
     }
 }
 
