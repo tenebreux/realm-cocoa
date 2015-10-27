@@ -17,12 +17,15 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #import <Foundation/Foundation.h>
+#import <Realm/RLMDefines.h>
+
+RLM_ASSUME_NONNULL_BEGIN
 
 @class RLMSchema;
 @class RLMArray;
 @class RLMObject;
 
-typedef void (^RLMObjectMigrationBlock)(RLMObject *oldObject, RLMObject *newObject);
+typedef void (^RLMObjectMigrationBlock)(RLMObject * __nullable oldObject, RLMObject * __nullable newObject);
 
 /**---------------------------------------------------------------------------------------
  *  @name Realm Migrations
@@ -78,8 +81,6 @@ typedef void (^RLMObjectMigrationBlock)(RLMObject *oldObject, RLMObject *newObje
  */
 -(RLMObject *)createObject:(NSString *)className withValue:(id)value;
 
--(RLMObject *)createObject:(NSString *)className withObject:(id)object DEPRECATED_MSG_ATTRIBUTE("use createObject:withValue:");
-
 /**
  Delete an object from a Realm during a migration. This can be called within `enumerateObjects:block:`.
 
@@ -100,4 +101,4 @@ typedef void (^RLMObjectMigrationBlock)(RLMObject *oldObject, RLMObject *newObje
 
 @end
 
-
+RLM_ASSUME_NONNULL_END

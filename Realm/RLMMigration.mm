@@ -28,8 +28,9 @@
 #import "RLMResults_Private.h"
 #import "RLMSchema_Private.h"
 
-#import <realm/link_view.hpp>
-#import <realm/table_view.hpp>
+#import "shared_realm.hpp"
+
+using namespace realm;
 
 // The source realm for a migration has to use a SharedGroup to be able to share
 // the file with the destination realm, but we don't want to let the user call
@@ -49,20 +50,13 @@
 
 @implementation RLMMigration
 
-- (instancetype)initWithRealm:(RLMRealm *)realm key:(NSData *)key error:(NSError **)error {
+- (instancetype)initWithRealm:(RLMRealm *)realm oldRealm:(RLMRealm *)oldRealm {
     self = [super init];
     if (self) {
         // create rw realm to migrate with current on disk table
         _realm = realm;
-
-        // create read only realm used during migration with current on disk schema
-        _oldRealm = [[RLMMigrationRealm alloc] initWithPath:realm.path key:key readOnly:NO inMemory:NO dynamic:YES error:error];
-        if (_oldRealm) {
-            RLMRealmSetSchema(_oldRealm, [RLMSchema dynamicSchemaFromRealm:_oldRealm], true);
-        }
-        if (error && *error) {
-            return nil;
-        }
+        _oldRealm = oldRealm;
+        object_setClass(_oldRealm, RLMMigrationRealm.class);
     }
     return self;
 }
@@ -82,61 +76,40 @@
 
     if (objects && oldObjects) {
         for (long i = oldObjects.count - 1; i >= 0; i--) {
-            block(oldObjects[i], objects[i]);
+            @autoreleasepool {
+                block(oldObjects[i], objects[i]);
+            }
         }
     }
     else if (objects) {
         for (long i = objects.count - 1; i >= 0; i--) {
-            block(nil, objects[i]);
+            @autoreleasepool {
+                block(nil, objects[i]);
+            }
         }
     }
     else if (oldObjects) {
         for (long i = oldObjects.count - 1; i >= 0; i--) {
-            block(oldObjects[i], nil);
-        }
-    }
-}
-
-- (void)verifyPrimaryKeyUniqueness {
-    for (RLMObjectSchema *objectSchema in _realm.schema.objectSchema) {
-        // if we have a new primary key not equal to our old one, verify uniqueness
-        RLMProperty *primaryProperty = objectSchema.primaryKeyProperty;
-        RLMProperty *oldPrimaryProperty = [[_oldRealm.schema schemaForClassName:objectSchema.className] primaryKeyProperty];
-        if (!primaryProperty || primaryProperty == oldPrimaryProperty) {
-            continue;
-        }
-
-        realm::Table *table = objectSchema.table;
-        NSUInteger count = table->size();
-        if (!table->has_search_index(primaryProperty.column)) {
-            table->add_search_index(primaryProperty.column);
-        }
-        if (table->get_distinct_view(primaryProperty.column).size() != count) {
-            NSString *reason = [NSString stringWithFormat:@"Primary key property '%@' has duplicate values after migration.", primaryProperty.name];
-            @throw RLMException(reason);
+            @autoreleasepool {
+                block(oldObjects[i], nil);
+            }
         }
     }
 }
 
 - (void)execute:(RLMMigrationBlock)block {
     @autoreleasepool {
-        // copy old schema and reset after migration
-        RLMSchema *savedSchema = [_realm.schema copy];
-
         // disable all primary keys for migration
         for (RLMObjectSchema *objectSchema in _realm.schema.objectSchema) {
             objectSchema.primaryKeyProperty.isPrimary = NO;
         }
 
         // apply block and set new schema version
-        uint64_t oldVersion = RLMRealmSchemaVersion(_realm);
+        uint64_t oldVersion = _oldRealm->_realm->config().schema_version;
         block(self, oldVersion);
 
-        // verify uniqueness for any new unique columns before committing
-        [self verifyPrimaryKeyUniqueness];
-
-        // reset schema to saved schema since it has been altered
-        RLMRealmSetSchema(_realm, savedSchema, true);
+        _oldRealm = nil;
+        _realm = nil;
     }
 }
 
@@ -157,20 +130,16 @@
         return false;
     }
 
-    size_t table = _realm.group->find_table(RLMStringDataWithNSString(RLMTableNameForClass(name)));
-    if (table == realm::not_found) {
+    TableRef table = ObjectStore::table_for_object_type(_realm.group, name.UTF8String);
+    if (!table) {
         return false;
     }
 
     if ([_realm.schema schemaForClassName:name]) {
-        _realm.group->get_table(table)->clear();
+        table->clear();
     }
     else {
-        _realm.group->remove_table(table);
-
-        if (RLMRealmPrimaryKeyForObjectClass(_realm, name)) {
-            RLMRealmSetPrimaryKeyForObjectClass(_realm, name, nil);
-        }
+        realm::ObjectStore::delete_data_for_object(_realm.group, name.UTF8String);
     }
 
     return true;

@@ -17,21 +17,27 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #import <Realm/RLMConstants.h>
+#import <Realm/RLMOptionalBase.h>
 #import <objc/runtime.h>
 
 #import <realm/array.hpp>
 #import <realm/binary_data.hpp>
+#import <realm/datetime.hpp>
 #import <realm/string_data.hpp>
+#import <realm/util/file.hpp>
 
 @class RLMObjectSchema;
 @class RLMProperty;
-@class RLMRealm;
-@class RLMSchema;
+@protocol RLMFastEnumerable;
 
-NSException *RLMException(NSString *message, NSDictionary *userInfo = nil);
+__attribute__((format(NSString, 1, 2)))
+NSException *RLMException(NSString *fmt, ...);
 NSException *RLMException(std::exception const& exception);
 
 NSError *RLMMakeError(RLMError code, std::exception const& exception);
+NSError *RLMMakeError(RLMError code, const realm::util::File::AccessError&);
+NSError *RLMMakeError(std::system_error const& exception);
+NSError *RLMMakeError(NSException *exception);
 
 void RLMSetErrorOrThrow(NSError *error, NSError **outError);
 
@@ -42,9 +48,9 @@ BOOL RLMIsObjectValidForProperty(id obj, RLMProperty *prop);
 // merges with native property defaults if Swift class
 NSDictionary *RLMDefaultValuesForObjectSchema(RLMObjectSchema *objectSchema);
 
-NSArray *RLMCollectionValueForKey(NSString *key, RLMRealm *realm, RLMObjectSchema *objectSchema, size_t count, size_t (^indexGenerator)(size_t index));
+NSArray *RLMCollectionValueForKey(id<RLMFastEnumerable> collection, NSString *key);
 
-void RLMCollectionSetValueForKey(id value, NSString *key, RLMRealm *realm, RLMObjectSchema *objectSchema, size_t count, size_t (^indexGenerator)(size_t index));
+void RLMCollectionSetValueForKey(id<RLMFastEnumerable> collection, NSString *key, id value);
 
 BOOL RLMIsDebuggerAttached();
 
@@ -66,6 +72,17 @@ static inline T *RLMDynamicCast(__unsafe_unretained id obj) {
         return obj;
     }
     return nil;
+}
+
+template<typename T>
+static inline T RLMCoerceToNil(__unsafe_unretained T obj) {
+    if (static_cast<id>(obj) == NSNull.null) {
+        return nil;
+    }
+    else if (__unsafe_unretained auto optional = RLMDynamicCast<RLMOptionalBase>(obj)) {
+        return RLMCoerceToNil(optional.underlyingValue);
+    }
+    return obj;
 }
 
 // Translate an rlmtype to a string representation
@@ -99,9 +116,14 @@ static inline NSString *RLMTypeToString(RLMPropertyType type) {
 static inline NSString * RLMStringDataToNSString(realm::StringData stringData) {
     static_assert(sizeof(NSUInteger) >= sizeof(size_t),
                   "Need runtime overflow check for size_t to NSUInteger conversion");
-    return [[NSString alloc] initWithBytes:stringData.data()
-                                    length:stringData.size()
-                                  encoding:NSUTF8StringEncoding];
+    if (stringData.is_null()) {
+        return nil;
+    }
+    else {
+        return [[NSString alloc] initWithBytes:stringData.data()
+                                        length:stringData.size()
+                                      encoding:NSUTF8StringEncoding];
+    }
 }
 
 static inline realm::StringData RLMStringDataWithNSString(__unsafe_unretained NSString *const string) {
@@ -112,8 +134,27 @@ static inline realm::StringData RLMStringDataWithNSString(__unsafe_unretained NS
 }
 
 // Binary convertion utilities
+static inline NSData *RLMBinaryDataToNSData(realm::BinaryData binaryData) {
+    return binaryData ? [NSData dataWithBytes:binaryData.data() length:binaryData.size()] : nil;
+}
+
 static inline realm::BinaryData RLMBinaryDataForNSData(__unsafe_unretained NSData *const data) {
-    return realm::BinaryData(static_cast<const char *>(data.bytes), data.length);
+    // this is necessary to ensure that the empty NSData isn't treated by core as the null realm::BinaryData
+    // because data.bytes == 0 when data.length == 0
+    // the casting bit ensures that we create a data with a non-null pointer
+    auto bytes = static_cast<const char *>(data.bytes) ?: static_cast<char *>((__bridge void *)data);
+    return realm::BinaryData(bytes, data.length);
+}
+
+// Date convertion utilities
+static inline NSDate *RLMDateTimeToNSDate(realm::DateTime dateTime) {
+    auto timeInterval = static_cast<NSTimeInterval>(dateTime.get_datetime());
+    return [NSDate dateWithTimeIntervalSince1970:timeInterval];
+}
+
+static inline realm::DateTime RLMDateTimeForNSDate(__unsafe_unretained NSDate *const date) {
+    auto time = static_cast<int64_t>(date.timeIntervalSince1970);
+    return realm::DateTime(time);
 }
 
 static inline NSUInteger RLMConvertNotFound(size_t index) {
